@@ -1,0 +1,129 @@
+---
+title: "Insurance Charges Prediction and Clustering"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+---
+
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(tidyverse)
+library(caret)
+library(e1071)
+library(class)
+library(cluster)
+library(flexdashboard)
+
+# Load and clean data
+data <- read.csv("insurance.csv")
+data <- na.omit(data)  # Remove missing values
+data$charges_bin <- ifelse(data$charges > median(data$charges), 1, 0)  # Binary classification
+data$charges_bin <- as.factor(data$charges_bin)
+
+# Encoding categorical variables
+data <- data %>%
+  mutate(
+    sex = as.numeric(as.factor(sex)),
+    smoker = as.numeric(as.factor(smoker)),
+    region = as.numeric(as.factor(region))
+  )
+
+# Split dataset into training and testing sets
+set.seed(123)
+trainIndex <- createDataPartition(data$charges_bin, p = 0.7, list = FALSE)
+train <- data[trainIndex, ]
+test <- data[-trainIndex, ]
+
+# Separate features and target
+X_train <- train %>% select(-charges, -charges_bin)
+y_train <- train$charges_bin
+X_test <- test %>% select(-charges, -charges_bin)
+y_test <- test$charges_bin
+
+```
+Row
+-----------------------------------------------------
+
+### KNN
+```{r}
+knn_pred <- knn(X_train, X_test, y_train, k = 5)
+conf_knn <- confusionMatrix(as.factor(knn_pred), as.factor(y_test))
+accuracy_knn <- conf_knn$overall['Accuracy']
+
+df_knn <- data.frame(Actual = y_test, Predicted = knn_pred)
+ggplot(df_knn, aes(x = Actual, y = Predicted)) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "KNN: Actual vs Predicted", x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+### Naive Bayes
+```{r}
+nb_model <- naiveBayes(charges_bin ~ ., data = train)
+nb_pred <- predict(nb_model, test)
+conf_nb <- confusionMatrix(as.factor(nb_pred), as.factor(y_test))
+accuracy_nb <- conf_nb$overall['Accuracy']
+
+df_nb <- data.frame(Actual = y_test, Predicted = nb_pred)
+ggplot(df_nb, aes(x = Actual, y = Predicted)) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "Naive Bayes: Actual vs Predicted", x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+### SVM
+```{r}
+svm_model <- svm(charges_bin ~ ., data = train, kernel = "linear")
+svm_pred <- predict(svm_model, test)
+conf_svm <- confusionMatrix(as.factor(svm_pred), as.factor(y_test))
+accuracy_svm <- conf_svm$overall['Accuracy']
+
+df_svm <- data.frame(Actual = y_test, Predicted = svm_pred)
+ggplot(df_svm, aes(x = Actual, y = Predicted)) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "SVM: Actual vs Predicted", x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+Row
+-----------------------------------------------------
+
+### K-Means Clustering 
+```{r}
+set.seed(123)
+kmeans_res <- kmeans(X_train, centers = 3, nstart = 25)
+
+clusplot(X_train, 
+         kmeans_res$cluster, 
+         lines=0,
+         shade=TRUE, color=TRUE,
+         labels=1, plotchar=TRUE,
+         span=TRUE,
+         main = "K-Means Clustering Visualization")
+```
+
+### Hierarchical Clustering
+```{r}
+hclust_res <- hclust(dist(X_train, method="euclidean"))
+plot(hclust_res)
+rect.hclust(hclust_res, k=3, border="blue")
+```
+
+### Model Comparison
+```{r}
+# Display the model evaluation table
+model_results <- data.frame(
+  Model = c("KNN", "Naive Bayes", "SVM"),
+  Accuracy = c(accuracy_knn, accuracy_nb, accuracy_svm)
+)
+
+##kable(model_results, caption = "Model Accuracy Comparison")
+
+model_results %>%
+  ggplot(aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Model Accuracy Comparison", x = "Model", y = "Accuracy") +
+  scale_fill_brewer(palette = "Set3")
+
+```
